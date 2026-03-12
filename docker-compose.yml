@@ -1,0 +1,74 @@
+# docker-compose.yml
+#
+# The image is self-contained: model weights, code, and deps are all baked in.
+# You only need to provide an API key and optionally mount a data volume.
+#
+# Usage:
+#   1. Copy .env.example to .env and set VGGT_API_KEY
+#   2. docker compose up -d
+#   3. curl http://localhost:8000/api/v1/health
+
+services:
+  vggt:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: vggt-secure:latest
+    container_name: vggt-secure
+
+    # ── GPU ─────────────────────────────────────────────────────────────
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+        limits:
+          memory: 32G
+          cpus: "8"
+
+    # ── Networking ──────────────────────────────────────────────────────
+    ports:
+      - "${VGGT_EXTERNAL_PORT:-8000}:8000"
+
+    # ── Environment ─────────────────────────────────────────────────────
+    # Model path + hash are baked into the image. Only API key is required.
+    environment:
+      - VGGT_API_KEY=${VGGT_API_KEY:?Set VGGT_API_KEY in .env}
+      - VGGT_MAX_IMAGES=${VGGT_MAX_IMAGES:-50}
+      - VGGT_MAX_RESOLUTION=${VGGT_MAX_RESOLUTION:-2048}
+      - VGGT_MAX_UPLOAD_MB=${VGGT_MAX_UPLOAD_MB:-200}
+      - VGGT_RATE_LIMIT_RPM=${VGGT_RATE_LIMIT_RPM:-30}
+      - VGGT_LOG_LEVEL=${VGGT_LOG_LEVEL:-INFO}
+      - NVIDIA_VISIBLE_DEVICES=all
+
+    # ── Volumes ─────────────────────────────────────────────────────────
+    # Data dir for persistent input/output (optional)
+    volumes:
+      - ${VGGT_DATA_DIR:-./data}:/data
+
+    # ── Security hardening ──────────────────────────────────────────────
+    read_only: true
+    tmpfs:
+      - /tmp/vggt-secure:rw,noexec,nosuid,size=5g
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+    restart: unless-stopped
+
+    healthcheck:
+      test: ["CMD", "python3", "-c",
+             "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health')"]
+      interval: 30s
+      timeout: 10s
+      start_period: 120s
+      retries: 3
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "5"

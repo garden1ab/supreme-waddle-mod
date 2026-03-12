@@ -1,0 +1,25 @@
+# requirements-docker.txt
+# Runtime deps only — torch/torchvision installed separately in Dockerfile
+# upstream vggt installed from git in Dockerfile
+
+# API server (replaces Gradio)
+fastapi==0.115.6
+uvicorn[standard]==0.32.1
+python-multipart==0.0.18
+pydantic==2.10.6
+
+# 3D processing + SolidWorks export
+trimesh==4.5.3
+scipy==1.14.1
+numpy>=1.26.0,<2.0
+Pillow>=10.4.0
+huggingface_hub>=0.25.0
+
+# Video frame extraction (headless — no GUI libs needed)
+opencv-python-headless>=4.10.0
+
+# Open3D for Poisson mesh reconstruction (SolidWorks STEP/STL)
+open3d>=0.18.0
+
+# Security
+cryptography>=43.0.0

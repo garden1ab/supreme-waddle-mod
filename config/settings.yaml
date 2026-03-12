@@ -1,0 +1,64 @@
+# VGGT-Secure Configuration
+# Override any value via environment variable prefixed with VGGT_
+# e.g., VGGT_API_KEY=mysecret, VGGT_MAX_IMAGES=30
+
+# ── Authentication ──────────────────────────────────────────────────────
+# REQUIRED. Set via VGGT_API_KEY env var. Never commit real keys.
+api_key: ""
+
+# ── Model ───────────────────────────────────────────────────────────────
+model:
+  # Path to local model weights. Downloaded once, loaded offline.
+  path: "~/.cache/vggt/model.pt"
+  # SHA-256 hash of the model file. Set after first trusted download.
+  # Run: sha256sum ~/.cache/vggt/model.pt
+  expected_hash: ""
+  # Use commercial checkpoint (required for commercial use)
+  commercial: true
+  # Commercial checkpoint URL (used only during download-model command)
+  commercial_url: "https://huggingface.co/facebook/VGGT-1B-Commercial/resolve/main/model.pt"
+  original_url: "https://huggingface.co/facebook/VGGT-1B/resolve/main/model.pt"
+
+# ── Input Validation ────────────────────────────────────────────────────
+limits:
+  max_images: 50
+  max_resolution: 2048          # pixels per side
+  max_file_size_mb: 50          # per image
+  max_upload_total_mb: 200      # per request
+  allowed_extensions:
+    - .png
+    - .jpg
+    - .jpeg
+    - .bmp
+    - .tiff
+    - .tif
+    - .webp
+
+# ── Server ──────────────────────────────────────────────────────────────
+server:
+  host: "127.0.0.1"            # localhost only; use reverse proxy for external
+  port: 8000
+  workers: 1                    # GPU inference is single-threaded
+  timeout: 300                  # seconds per request
+  max_request_size_mb: 250
+  allowed_origins: []           # CORS origins; empty = same-origin only
+  rate_limit_rpm: 30            # requests per minute per API key
+
+# ── Temp Files ──────────────────────────────────────────────────────────
+temp:
+  base_dir: "/tmp/vggt-secure"
+  ttl_seconds: 3600             # auto-cleanup after 1 hour
+  max_disk_mb: 5000             # max temp disk usage
+
+# ── Logging ─────────────────────────────────────────────────────────────
+logging:
+  level: "INFO"
+  format: "json"                # json or text
+  # Never log: file paths, IP addresses, uploaded filenames
+  redact_paths: true
+  redact_ips: true
+
+# ── GPU ─────────────────────────────────────────────────────────────────
+gpu:
+  memory_limit_gb: 0            # 0 = no limit; set to cap VRAM usage
+  dtype: "bfloat16"             # bfloat16, float16, or float32

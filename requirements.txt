@@ -1,0 +1,38 @@
+# VGGT-Secure pinned dependencies
+# Run: pip install -r requirements.txt
+# Audit: pip-audit -r requirements.txt
+
+# Core ML
+torch>=2.6.0
+torchvision>=0.21.0
+numpy>=1.26.0,<2.0
+Pillow>=10.4.0
+huggingface_hub>=0.25.0
+
+# API server (replaces Gradio)
+fastapi>=0.115.0
+uvicorn[standard]>=0.32.0
+python-multipart>=0.0.12
+pydantic>=2.10.0
+
+# 3D processing
+trimesh>=4.5.0
+scipy>=1.14.0
+open3d>=0.18.0
+
+# Security
+cryptography>=43.0.0
+
+# COLMAP export support
+pycolmap>=0.6.0;python_version>="3.10"
+
+# Video processing (locked, CVE-patched)
+opencv-python-headless>=4.10.0
+
+# Visualization (local only, optional)
+# viser>=0.2.0
+
+# Dev / audit tools (optional, not needed at runtime)
+# pip-audit>=2.7.0
+# bandit>=1.7.0
+# safety>=3.0.0
