@@ -1,0 +1,18 @@
+# .env — Configuration for docker compose
+# Copy from .env.example:  cp .env.example .env
+
+# REQUIRED: API key (generate with: openssl rand -hex 32)
+VGGT_API_KEY=CHANGE_ME
+
+# External port
+VGGT_EXTERNAL_PORT=8000
+
+# Host directory for persistent input/output data
+VGGT_DATA_DIR=./data
+
+# Processing limits (optional overrides)
+# VGGT_MAX_IMAGES=50
+# VGGT_MAX_RESOLUTION=2048
+# VGGT_MAX_UPLOAD_MB=200
+# VGGT_RATE_LIMIT_RPM=30
+# VGGT_LOG_LEVEL=INFO
