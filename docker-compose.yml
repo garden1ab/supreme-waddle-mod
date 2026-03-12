@@ -1,22 +1,21 @@
 # docker-compose.yml
-#
-# The image is self-contained: model weights, code, and deps are all baked in.
-# You only need to provide an API key and optionally mount a data volume.
+# Production deployment with GPU, secrets, networking, and resource limits
 #
 # Usage:
-#   1. Copy .env.example to .env and set VGGT_API_KEY
-#   2. docker compose up -d
-#   3. curl http://localhost:8000/api/v1/health
+#   1. Place model weights at ./model/model.pt (or change the volume path)
+#   2. Create .env file (see .env.example)
+#   3. docker compose up -d
+#   4. curl http://localhost:8000/api/v1/health
 
 services:
-  vggt:
+  vggt-api:
     build:
       context: .
       dockerfile: Dockerfile
     image: vggt-secure:latest
     container_name: vggt-secure
 
-    # ── GPU ─────────────────────────────────────────────────────────────
+    # GPU access
     deploy:
       resources:
         reservations:
@@ -28,27 +27,31 @@ services:
           memory: 32G
           cpus: "8"
 
-    # ── Networking ──────────────────────────────────────────────────────
     ports:
       - "${VGGT_EXTERNAL_PORT:-8000}:8000"
 
-    # ── Environment ─────────────────────────────────────────────────────
-    # Model path + hash are baked into the image. Only API key is required.
     environment:
       - VGGT_API_KEY=${VGGT_API_KEY:?Set VGGT_API_KEY in .env}
+      - VGGT_MODEL_PATH=/model/model.pt
+      - VGGT_MODEL_HASH=${VGGT_MODEL_HASH:-}
+      - VGGT_BIND_HOST=0.0.0.0
+      - VGGT_BIND_PORT=8000
       - VGGT_MAX_IMAGES=${VGGT_MAX_IMAGES:-50}
       - VGGT_MAX_RESOLUTION=${VGGT_MAX_RESOLUTION:-2048}
       - VGGT_MAX_UPLOAD_MB=${VGGT_MAX_UPLOAD_MB:-200}
       - VGGT_RATE_LIMIT_RPM=${VGGT_RATE_LIMIT_RPM:-30}
       - VGGT_LOG_LEVEL=${VGGT_LOG_LEVEL:-INFO}
+      - VGGT_TEMP_DIR=/tmp/vggt-secure
+      - VGGT_TEMP_DIR_TTL=3600
       - NVIDIA_VISIBLE_DEVICES=all
 
-    # ── Volumes ─────────────────────────────────────────────────────────
-    # Data dir for persistent input/output (optional)
     volumes:
+      # Model weights — read-only mount
+      - ${VGGT_MODEL_DIR:-./model}:/model:ro
+      # Shared data directory for input/output
       - ${VGGT_DATA_DIR:-./data}:/data
 
-    # ── Security hardening ──────────────────────────────────────────────
+    # Security hardening
     read_only: true
     tmpfs:
       - /tmp/vggt-secure:rw,noexec,nosuid,size=5g
@@ -57,11 +60,15 @@ services:
     cap_drop:
       - ALL
 
+    # Networking — no outbound internet needed after build
+    # Uncomment to block outbound (requires custom network):
+    # networks:
+    #   - internal
+
     restart: unless-stopped
 
     healthcheck:
-      test: ["CMD", "python3", "-c",
-             "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health')"]
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health')"]
       interval: 30s
       timeout: 10s
       start_period: 120s
@@ -72,3 +79,8 @@ services:
       options:
         max-size: "50m"
         max-file: "5"
+
+# Optional: isolated network that blocks outbound internet
+# networks:
+#   internal:
+#     internal: true
