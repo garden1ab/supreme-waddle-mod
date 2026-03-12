@@ -1,0 +1,12 @@
+# Build context exclusions
+.git
+.env
+*.md
+*.tar.gz
+*.pdf
+model/
+data/
+__pycache__
+*.pyc
+.pytest_cache
+tests/
