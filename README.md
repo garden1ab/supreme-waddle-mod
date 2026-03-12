@@ -1,171 +1,111 @@
-# VGGT-Secure
+# VGGT-Secure: Hardened Fork of Visual Geometry Grounded Transformer
 
-Hardened fork of [facebookresearch/vggt](https://github.com/facebookresearch/vggt)
-for production use. Fully self-contained Docker image — one build command, no
-external steps.
-
-## What Happens When You Build
-
-`docker build` does everything automatically:
-
-1. Pulls NVIDIA CUDA 12.4 base image
-2. Installs PyTorch 2.6 with CUDA support
-3. Clones upstream `facebookresearch/vggt` and installs it
-4. **Removes** Gradio, viser, training code, example assets, runtime HTTP calls
-5. Installs our hardened FastAPI server, security layer, and SolidWorks exporter
-6. **Downloads the 5GB model weights** and bakes them into the image
-7. Computes SHA-256 hash of the model and stores it for runtime verification
-8. Creates non-root user, strips SUID bits, sets file permissions
-9. Produces a ready-to-run image
-
-## Quick Start
-
-```bash
-# Build (downloads everything — takes ~15-30 min first time)
-docker build -t vggt-secure .
-
-# Run the API server
-docker run --gpus all -p 8000:8000 -e VGGT_API_KEY=mysecret vggt-secure
-
-# Test
-curl http://localhost:8000/api/v1/health
-```
-
-That's it. No model downloads, no `.env` files, no volume mounts required.
-
-## Usage
-
-### API Server
-
-```bash
-# Start
-docker run --gpus all -p 8000:8000 -e VGGT_API_KEY=mysecret vggt-secure
-
-# Reconstruct from images
-curl -X POST http://localhost:8000/api/v1/reconstruct \
-  -H "Authorization: Bearer mysecret" \
-  -F "images=@photo1.jpg" \
-  -F "images=@photo2.jpg" \
-  -F "images=@photo3.jpg"
-# Returns: { "job_id": "abc123", "num_points": 50000, ... }
-
-# Export to SolidWorks STL
-curl -X POST "http://localhost:8000/api/v1/export/stl?job_id=abc123" \
-  -H "Authorization: Bearer mysecret" \
-  --output model.stl
-
-# Export formats: stl, obj, ply, step, iges
-```
-
-### CLI (batch processing)
-
-```bash
-# Reconstruct a directory of images
-docker run --rm --gpus all \
-  -v /path/to/scene:/data/scene:ro \
-  -v /path/to/output:/data/output \
-  vggt-secure reconstruct --scene_dir /data/scene --output /data/output
-
-# Export predictions to SolidWorks STL
-docker run --rm \
-  -v /path/to/output:/data:ro \
-  -v /path/to/exports:/out \
-  vggt-secure export -i /data/predictions.npz -f stl -o /out
-
-# Export all formats at once
-docker run --rm \
-  -v /path/to/output:/data:ro \
-  -v /path/to/exports:/out \
-  vggt-secure export -i /data/predictions.npz -f all -o /out
-
-# Security audit
-docker run --rm vggt-secure audit
-```
-
-### Docker Compose
-
-```bash
-cp .env.example .env
-# Edit .env — set VGGT_API_KEY (generate: openssl rand -hex 32)
-
-docker compose up -d        # Start
-docker compose logs -f      # Logs
-docker compose down          # Stop
-```
-
-### Makefile Shortcuts
-
-```bash
-make build                   # Build image
-make run                     # Start with docker compose
-make run-direct VGGT_API_KEY=key  # Run without compose
-make stop                    # Stop
-make logs                    # Tail logs
-make audit                   # Security summary
-
-make reconstruct SCENE=/path/to/images OUTPUT=/path/to/results
-make export INPUT=/path/to/predictions.npz FMT=stl OUTPUT=./exports
-```
-
-## Production Hardening
-
-The `docker-compose.yml` applies all of these by default:
-
-```yaml
-read_only: true                            # Immutable filesystem
-tmpfs: /tmp/vggt-secure (noexec, nosuid)   # Scratch space
-security_opt: no-new-privileges            # No privilege escalation
-cap_drop: ALL                              # Zero Linux capabilities
-memory: 32G                                # Resource ceiling
-healthcheck: /api/v1/health                # Load balancer ready
-```
-
-The image also:
-- Runs as non-root user `vggt`
-- Has SUID/SGID bits stripped from all binaries
-- Uses `weights_only=True` for model loading (blocks pickle RCE)
-- Verifies model SHA-256 hash at every startup
-- Returns generic errors to clients (no stack traces)
-- Enforces API key auth + rate limiting on all endpoints
-- Validates every uploaded image (extension, magic bytes, dimensions, file size)
-- Auto-cleans temp directories on a TTL
-
-## API Endpoints
-
-| Method | Path | Auth | Description |
-|---|---|---|---|
-| `GET` | `/api/v1/health` | No | Health check |
-| `POST` | `/api/v1/reconstruct` | Yes | Upload images → 3D reconstruction |
-| `POST` | `/api/v1/export/{fmt}?job_id=ID` | Yes | Export to STL/OBJ/PLY/STEP/IGES |
-
-## SolidWorks Import
-
-| Format | How to Import |
-|---|---|
-| **STL** | File → Open → select .stl |
-| **OBJ** | ScanTo3D add-in → File → Open |
-| **PLY** | ScanTo3D → Mesh Prep Wizard |
-| **STEP** | File → Open (best for CAD editing) |
-| **IGES** | File → Open (legacy) |
-
-## Build Args
-
-Override at build time for different configurations:
-
-```bash
-# Use commercial checkpoint (requires HF access approval)
-docker build \
-  --build-arg MODEL_URL=https://huggingface.co/facebook/VGGT-1B-Commercial/resolve/main/model.pt \
-  -t vggt-secure .
-
-# Pin to a known model hash (build fails if mismatch)
-docker build \
-  --build-arg MODEL_EXPECTED_HASH=abc123... \
-  -t vggt-secure .
-```
+This is a security-hardened fork of [facebookresearch/vggt](https://github.com/facebookresearch/vggt)
+for corporate/production deployment. 
 
 ## What Changed From Upstream
 
-See [CHANGES.md](CHANGES.md). Summary: removed Gradio, viser, training code,
-runtime downloads, `allow_pickle=True`, `show_error=True`, `share=True`.
-Added FastAPI with auth, input validation, model integrity checks, SolidWorks export.
+### Removed (Security / Privacy)
+- **Gradio web interface** (`demo_gradio.py`) — replaced with authenticated FastAPI REST API
+- **`share=True` public tunnel** — no public exposure by default
+- **`show_error=True`** — internal stack traces never reach clients
+- **`allow_pickle=True`** on `np.load` — all numpy loads use `allow_pickle=False`
+- **Unpinned dependencies** — all deps locked to exact versions with hashes
+- **`torch.hub.load_state_dict_from_url`** — replaced with offline-first loader + SHA-256 verification
+- **Timestamp-based temp dirs** — replaced with UUID4 + auto-cleanup
+- **User-controlled strings in filenames** — replaced with parameter-hash filenames
+- **`visual_util.py` `import requests`** — removed external HTTP calls from processing code
+- **`import gradio`** from `visual_util.py` — removed; visualization is now headless
+- **`sys.path.append()`** hacks — proper package structure
+- **HuggingFace Spaces `@spaces.GPU` decorator** — removed cloud-specific code
+
+### Added (Security)
+- **SHA-256 model weight verification** on every load
+- **`weights_only=True`** for PyTorch 2.6+ (blocks pickle RCE)
+- **Input validation** — file extension, magic bytes, dimensions, batch size, file size
+- **Per-request rate limiting** via token bucket
+- **API key authentication** for all endpoints
+- **Request size limits** (configurable max images, max resolution, max upload MB)
+- **Automatic temp directory cleanup** with configurable TTL
+- **CORS lockdown** — only allowed origins
+- **Security headers** — CSP, HSTS, X-Content-Type-Options, etc.
+- **Structured JSON logging** — no PII, no file paths in responses
+- **Resource limits** — GPU memory watchdog, request timeouts
+- **SolidWorks export pipeline** — STL, OBJ, PLY, STEP, IGES conversion built-in
+
+### Added (Functionality)
+- **REST API** (`POST /api/v1/reconstruct`) — upload images, get 3D results
+- **SolidWorks export** (`POST /api/v1/export/{format}`) — convert to CAD formats
+- **Health check** (`GET /api/v1/health`) — for load balancer probes
+- **CLI tool** (`python -m vggt_secure.cli`) — for local batch processing
+- **Docker support** — production-ready Dockerfile with non-root user
+
+## Quick Start
+
+### Local CLI (no server needed)
+```bash
+# Install
+pip install -r requirements.txt
+
+# Download and verify model weights (one-time)
+python -m vggt_secure.cli download-model
+
+# Reconstruct from images
+python -m vggt_secure.cli reconstruct --scene_dir /path/to/images/ --output ./results/
+
+# Export to SolidWorks format
+python -m vggt_secure.cli export --input ./results/predictions.npz --format stl --output model.stl
+```
+
+### API Server
+```bash
+# Set API key
+export VGGT_API_KEY="your-secret-key-here"
+
+# Start server (localhost only by default)
+python -m vggt_secure.server --host 127.0.0.1 --port 8000
+
+# With Docker
+docker build -t vggt-secure .
+docker run --gpus all -p 8000:8000 -e VGGT_API_KEY=your-key vggt-secure
+```
+
+### API Usage
+```bash
+# Reconstruct
+curl -X POST http://localhost:8000/api/v1/reconstruct \
+  -H "Authorization: Bearer your-key" \
+  -F "images=@photo1.jpg" \
+  -F "images=@photo2.jpg" \
+  -F "images=@photo3.jpg"
+
+# Export to STL
+curl -X POST http://localhost:8000/api/v1/export/stl \
+  -H "Authorization: Bearer your-key" \
+  -F "predictions=@results/predictions.npz" \
+  --output model.stl
+```
+
+## Configuration
+
+All settings via environment variables or `config/settings.yaml`:
+
+| Variable | Default | Description |
+|---|---|---|
+| `VGGT_API_KEY` | (required) | API authentication key |
+| `VGGT_MODEL_PATH` | `~/.cache/vggt/model.pt` | Local model weights path |
+| `VGGT_MODEL_HASH` | (see config) | Expected SHA-256 of model weights |
+| `VGGT_MAX_IMAGES` | `50` | Maximum images per request |
+| `VGGT_MAX_RESOLUTION` | `2048` | Maximum image dimension (px) |
+| `VGGT_MAX_UPLOAD_MB` | `200` | Maximum total upload size |
+| `VGGT_BIND_HOST` | `127.0.0.1` | Server bind address |
+| `VGGT_BIND_PORT` | `8000` | Server bind port |
+| `VGGT_ALLOWED_ORIGINS` | `""` | CORS allowed origins (comma-separated) |
+| `VGGT_TEMP_DIR_TTL` | `3600` | Temp directory cleanup TTL (seconds) |
+| `VGGT_LOG_LEVEL` | `INFO` | Logging level |
+
+## License
+
+Code modifications in this fork: same license as upstream VGGT.
+Model weights: use `VGGT-1B-Commercial` checkpoint for commercial use.
+See upstream LICENSE.txt for full terms.
